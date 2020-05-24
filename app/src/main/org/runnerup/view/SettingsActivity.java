@@ -29,6 +29,7 @@ import android.content.res.Resources;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.preference.CheckBoxPreference;
 import android.preference.Preference;
 import android.preference.Preference.OnPreferenceClickListener;
 import android.preference.PreferenceActivity;
@@ -39,15 +40,11 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AlertDialog;
 import android.util.Log;
 
-import org.runnerup.BuildConfig;
 import org.runnerup.R;
 import org.runnerup.db.DBHelper;
 import org.runnerup.tracker.component.TrackerCadence;
 import org.runnerup.tracker.component.TrackerPressure;
 import org.runnerup.tracker.component.TrackerTemperature;
-import org.runnerup.util.FileUtil;
-
-import java.io.IOException;
 
 
 public class SettingsActivity extends PreferenceActivity
@@ -98,6 +95,19 @@ public class SettingsActivity extends PreferenceActivity
             Preference pref = findPreference(this.getString(R.string.pref_use_pressure_sensor));
             pref.setEnabled(false);
         }
+        CheckBoxPreference simplifyOnSave = (CheckBoxPreference) findPreference(getString(R.string.pref_path_simplification_on_save));
+        CheckBoxPreference simplifyOnExport = (CheckBoxPreference) findPreference(getString(R.string.pref_path_simplification_on_export));
+        if (simplifyOnSave.isChecked()) {
+            simplifyOnExport.setChecked(true);
+        }
+        simplifyOnSave.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            public boolean onPreferenceChange(Preference preference, Object newValue){
+                if ((Boolean) newValue) {
+                    simplifyOnExport.setChecked(true);
+                };
+                return true;
+            }
+        });
     }
 
     public static boolean hasHR(Context ctx) {

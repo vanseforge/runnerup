@@ -341,4 +341,14 @@
   <string name="Lock_activity_buttons_message">Lock activity buttons by fast clicking the header</string>
   <string name="Speed">Speed</string>
   <string name="Speed_unit_preference">Speed unit</string>
+  <string name="path_simplification">Path simplification</string>
+  <string name="path_simplification_info">Reduce the resolution of the GPS path (logged locations over time). Smooths the path and decreases the size of an activity in the database or an exported file.</string>
+  <string name="path_simplification_on_save">Simplify when saving activity</string>
+  <string name="path_simplification_on_export">Simplify when uploading to accounts</string>
+  <string name="path_simplification_tolerance">Tolerance (m)</string>
+  <string name="path_simplification_algorithm">Algorithm</string>
+  <string name="path_simplification_algorithm_info">Choose fast or high quality path simplification</string>
+  <string name="path_simplification_menu">Simplify path</string>
+  <string name="File_format">Upload file(s) as:</string>
+  <string name="File_need_one_format">At least one format needed!</string>
 </resources>

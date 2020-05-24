@@ -21,6 +21,8 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
 import org.runnerup.common.util.Constants.DB;
+import org.runnerup.db.PathCursor;
+import org.runnerup.db.PathSimplifier;
 import org.runnerup.util.KXmlSerializer;
 import org.runnerup.workout.Sport;
 
@@ -34,22 +36,26 @@ import java.util.TimeZone;
 
 public class GPX {
 
-    private SQLiteDatabase mDB = null;
-    private KXmlSerializer mXML = null;
-    private SimpleDateFormat simpleDateFormat = null;
+    private SQLiteDatabase mDB;
+    private KXmlSerializer mXML;
+    private SimpleDateFormat simpleDateFormat;
     final private boolean mGarminExt; //Also Cluetrust
     private final boolean mAccuracyExtensions;
+    private PathSimplifier simplifier;
 
-    public GPX(SQLiteDatabase mDB) {
-        this(mDB, true, false);
+    public GPX(SQLiteDatabase mDB, PathSimplifier simplifier) {
+        this(mDB, true, false, simplifier);
     }
 
-    public GPX(SQLiteDatabase mDB, boolean garminExt, boolean accuracyExtensions) {
+
+    public GPX(SQLiteDatabase mDB, boolean garminExt, boolean accuracyExtensions, PathSimplifier simplifier) {
         this.mDB = mDB;
+        mXML = new KXmlSerializer();
         simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
         simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
         this.mGarminExt = garminExt;
         this.mAccuracyExtensions = accuracyExtensions;
+        this.simplifier = simplifier;
     }
 
     private String formatTime(long time) {
@@ -73,7 +79,6 @@ public class GPX {
 
         long startTime = cursor.getLong(2); // epoch
         try {
-            mXML = new KXmlSerializer();
             mXML.setFeature("http://xmlpull.org/v1/doc/features.html#indent-output", true);
             mXML.setOutput(writer);
             mXML.startDocument("UTF-8", true);
@@ -154,22 +159,24 @@ public class GPX {
                 DB.LOCATION.ALTITUDE, DB.LOCATION.TYPE,
                 DB.LOCATION.HR, DB.LOCATION.CADENCE, DB.LOCATION.TEMPERATURE, DB.LOCATION.PRESSURE,
                 DB.LOCATION.ACCURANCY, DB.LOCATION.BEARING, DB.LOCATION.SPEED,
-                DB.LOCATION.SATELLITES, DB.LOCATION.GPS_ALTITUDE
+                DB.LOCATION.SATELLITES, DB.LOCATION.GPS_ALTITUDE,
+                DB.PRIMARY_KEY
         };
-        Cursor cLocation = mDB.query(DB.LOCATION.TABLE, pColumns,
-                DB.LOCATION.ACTIVITY + " = " + activityId, null, null, null,
-                null);
+        PathCursor cLocation = new PathCursor(mDB, activityId, pColumns, 15, simplifier);
         boolean lok = cLap.moveToFirst();
         boolean pok = cLocation.moveToFirst();
 
+        // Tracks with time gaps may show as unconnected, mostly the same as this setting
+        final boolean useLapTrkSeg = (simplifier == null);
+
+        // number of GPS points in current track segment
+        int segmentPoints = 0;
         while (lok) {
             if (cLap.getFloat(1) != 0 && cLap.getLong(2) != 0) {
                 long lap = cLap.getLong(0);
                 while (pok && cLocation.getLong(0) != lap) {
                     pok = cLocation.moveToNext();
                 }
-                boolean hasPoints = false;
-                mXML.startTag("", "trkseg");
                 if (pok && cLocation.getLong(0) == lap) {
                     long last_time = 0;
                     while (pok && cLocation.getLong(0) == lap) {
@@ -178,16 +185,20 @@ public class GPX {
                         long time = cLocation.getLong(1);
                         if (locType != DB.LOCATION.TYPE_GPS) {
                             if (mAccuracyExtensions) {
-                                if (hasPoints && locType == DB.LOCATION.TYPE_RESUME) {
+                                if (segmentPoints >= 2 && locType == DB.LOCATION.TYPE_RESUME) {
                                     // GPX has no standard for pauses, but segments are occasionally used,
                                     // sometimes separate activities
                                     mXML.endTag("", "trkseg");
-                                    mXML.startTag("", "trkseg");
+                                    segmentPoints = 0;
                                 }
                                 mXML.comment(" State change: " + locType + " " + formatTime(time));
                             }
                         } else if (time > last_time) {
-                            hasPoints = true;
+                            if (segmentPoints == 0) {
+                                mXML.startTag("", "trkseg");
+                            }
+                            segmentPoints++;
+                            
                             mXML.startTag("", "trkpt");
 
                             float lat = cLocation.getFloat(2);
@@ -319,10 +330,17 @@ public class GPX {
                         pok = cLocation.moveToNext();
                     }
                 }
-                mXML.endTag("", "trkseg");
+                if (useLapTrkSeg && segmentPoints >= 2) {
+                    // "merge" segments with less than two points
+                    mXML.endTag("", "trkseg");
+                    segmentPoints = 0;
+                }
             }
 
             lok = cLap.moveToNext();
+        }
+        if (segmentPoints > 0) {
+            mXML.endTag("", "trkseg");
         }
         cLap.close();
         cLocation.close();

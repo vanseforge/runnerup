@@ -17,8 +17,6 @@
 
 package org.runnerup.db;
 
-import android.annotation.TargetApi;
-import android.support.v7.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.ContentValues;
 import android.content.Context;
@@ -27,32 +25,31 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.os.AsyncTask;
-import android.os.Build;
+import android.support.v7.app.AlertDialog;
 import android.util.Log;
 
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.runnerup.R;
 import org.runnerup.common.util.Constants;
 import org.runnerup.db.entities.DBEntity;
-import org.runnerup.export.DigifitSynchronizer;
 import org.runnerup.export.DropboxSynchronizer;
 import org.runnerup.export.EndomondoSynchronizer;
 import org.runnerup.export.FacebookSynchronizer;
 import org.runnerup.export.FileSynchronizer;
-import org.runnerup.export.FunBeatSynchronizer;
 import org.runnerup.export.GarminSynchronizer;
 import org.runnerup.export.GoogleFitSynchronizer;
-import org.runnerup.export.GooglePlusSynchronizer;
 import org.runnerup.export.JoggSESynchronizer;
 import org.runnerup.export.MapMyRunSynchronizer;
-import org.runnerup.export.NikePlusSynchronizer;
 import org.runnerup.export.RunKeeperSynchronizer;
 import org.runnerup.export.RunalyzeSynchronizer;
 import org.runnerup.export.RunnerUpLiveSynchronizer;
 import org.runnerup.export.RunningAHEADSynchronizer;
-import org.runnerup.export.RunningFreeOnlineSynchronizer;
 import org.runnerup.export.RuntasticSynchronizer;
 import org.runnerup.export.StravaSynchronizer;
+import org.runnerup.export.WebDavSynchronizer;
 import org.runnerup.util.FileUtil;
+import org.runnerup.workout.FileFormats;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -133,7 +130,7 @@ public class DBHelper extends SQLiteOpenHelper implements
             + (DB.ACCOUNT.NAME + " text not null, ")
             + (DB.ACCOUNT.DESCRIPTION + " text, ") //DBVERSION update: remove
             + (DB.ACCOUNT.URL + " text, ") //DBVERSION update: remove
-            + (DB.ACCOUNT.FORMAT + " text not null, ") //DBVERSION update: remove
+            + (DB.ACCOUNT.FORMAT + " text not null, ") // tcx/gpx, for file uploads
             + (DB.ACCOUNT.FLAGS + " integer not null default " + DB.ACCOUNT.DEFAULT_FLAGS + ", ") //Mostly not used but dynamic changes could be stored here
             + (DB.ACCOUNT.ENABLED + " integer not null default 1,") //Account is not hidden/disabled
             + (DB.ACCOUNT.AUTH_METHOD + " text not null, ") //DBVERSION update: remove
@@ -391,7 +388,7 @@ public class DBHelper extends SQLiteOpenHelper implements
     }
 
     private void migrateFileSynchronizerInfo(SQLiteDatabase arg0) {
-            //Migrate storage of parameters, FORMAT is removed
+        // Migrate storage of parameters
         String from[] = { "_id", DB.ACCOUNT.FORMAT, DB.ACCOUNT.AUTH_CONFIG };
         String args[] = { FileSynchronizer.NAME };
         Cursor c = arg0.query(DB.ACCOUNT.TABLE, from,
@@ -402,14 +399,31 @@ public class DBHelper extends SQLiteOpenHelper implements
         if (c.moveToFirst()) {
             ContentValues tmp = DBHelper.get(c);
             //URL was stored in AUTH_CONFIG previously, FORMAT migrated too
-            String oldUrl = tmp.getAsString(DB.ACCOUNT.AUTH_CONFIG);
+            String oldAuthConfig = tmp.getAsString(DB.ACCOUNT.AUTH_CONFIG);
             //DBVERSION update, not needed in onUpgrade()
-            if (oldUrl.startsWith("/")) {
-                tmp.put(DB.ACCOUNT.URL, oldUrl);
+            if (oldAuthConfig.startsWith("/")) {
+                tmp.put(DB.ACCOUNT.URL, oldAuthConfig);
                 String authConfig = FileSynchronizer.contentValuesToAuthConfig(tmp);
                 tmp = new ContentValues();
                 tmp.put(DB.ACCOUNT.AUTH_CONFIG, authConfig);
+                tmp.put(DB.ACCOUNT.FORMAT, FileFormats.DEFAULT_FORMATS.toString());
                 arg0.update(DB.ACCOUNT.TABLE, tmp, DB.ACCOUNT.NAME + " = ?", args);
+            } else {
+                try {
+                    // Check if AUTH_CONFIG contains deprecated FORMAT field
+                    JSONObject authcfg = new JSONObject(oldAuthConfig);
+                    String format = authcfg.optString(DB.ACCOUNT.FORMAT, null);
+                    if (format != null) {
+                        // Move deprecated FORMAT field in AUTH_CONFIG to ACCOUNT.FORMAT
+                        authcfg.put(DB.ACCOUNT.FORMAT, null);
+                        tmp = new ContentValues();
+                        tmp.put(DB.ACCOUNT.AUTH_CONFIG, authcfg.toString());
+                        tmp.put(DB.ACCOUNT.FORMAT, format);
+                        arg0.update(DB.ACCOUNT.TABLE, tmp, DB.ACCOUNT.NAME + " = ?", args);
+                    }
+                } catch (JSONException e) {
+                    Log.w("DBHelper", "Failed to parse File auth config", e);
+                }
             }
         }
         c.close();
@@ -455,22 +469,18 @@ public class DBHelper extends SQLiteOpenHelper implements
         insertAccount(arg0, GarminSynchronizer.NAME, 0);
         insertAccount(arg0, RunKeeperSynchronizer.NAME, 1);
         insertAccount(arg0, JoggSESynchronizer.NAME, 0);
-        insertAccount(arg0, FunBeatSynchronizer.NAME, 0);
         insertAccount(arg0, MapMyRunSynchronizer.NAME, 0);
-        insertAccount(arg0, NikePlusSynchronizer.NAME, 0);
         insertAccount(arg0, EndomondoSynchronizer.NAME, 1);
         insertAccount(arg0, RunningAHEADSynchronizer.NAME, 0);
-        insertAccount(arg0, DigifitSynchronizer.NAME, 0);
         insertAccount(arg0, StravaSynchronizer.NAME, 1);
         insertAccount(arg0, RunnerUpLiveSynchronizer.NAME, 0);
         insertAccount(arg0, FacebookSynchronizer.NAME, 0);
-        //insertAccount(arg0, GooglePlusSynchronizer.NAME, 0);
         insertAccount(arg0, RuntasticSynchronizer.NAME, 0);
         insertAccount(arg0, GoogleFitSynchronizer.NAME, 0);
-        insertAccount(arg0, RunningFreeOnlineSynchronizer.NAME, 0);
         insertAccount(arg0, FileSynchronizer.NAME, 1);
         insertAccount(arg0, RunalyzeSynchronizer.NAME, RunalyzeSynchronizer.ENABLED);
         insertAccount(arg0, DropboxSynchronizer.NAME, DropboxSynchronizer.ENABLED);
+        insertAccount(arg0, WebDavSynchronizer.NAME, 1);
     }
 
     private static void insertAccount(SQLiteDatabase arg0, String name, int enabled) {
@@ -486,8 +496,8 @@ public class DBHelper extends SQLiteOpenHelper implements
         if (flags >= 0) {
             arg1.put(DB.ACCOUNT.FLAGS, flags);
         }
+        arg1.put(DB.ACCOUNT.FORMAT, FileFormats.DEFAULT_FORMATS.toString());
         //DBVERSION update, must provide dummy data
-        arg1.put(DB.ACCOUNT.FORMAT, "tcx");
         arg1.put(DB.ACCOUNT.AUTH_METHOD, "dummy");
 
         //SQLite has no UPSERT command. Optimize for no change.
@@ -504,6 +514,16 @@ public class DBHelper extends SQLiteOpenHelper implements
             Log.v("DBhelper", "update: " + arg1);
         }
     }
+
+    public static void deleteAccount(SQLiteDatabase db, long id) {
+        Log.e("DBHelper", "deleting account: " + id);
+        String args[] = {
+                Long.toString(id)
+        };
+        db.delete(DB.EXPORT.TABLE, DB.EXPORT.ACCOUNT + " = ?", args);
+        db.delete(DB.ACCOUNT.TABLE, "_id = ?", args);
+    }
+
 
     public static ContentValues get(Cursor c) {
         if (c.isClosed() || c.isAfterLast() || c.isBeforeFirst())
@@ -653,3 +673,4 @@ public class DBHelper extends SQLiteOpenHelper implements
         builder.show();
     }
 }
+

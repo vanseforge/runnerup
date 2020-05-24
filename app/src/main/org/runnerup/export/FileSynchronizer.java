@@ -18,6 +18,7 @@
 package org.runnerup.export;
 
 import android.content.ContentValues;
+import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
@@ -29,8 +30,10 @@ import org.json.JSONObject;
 import org.runnerup.R;
 import org.runnerup.common.util.Constants;
 import org.runnerup.common.util.Constants.DB;
+import org.runnerup.db.PathSimplifier;
 import org.runnerup.export.format.GPX;
 import org.runnerup.export.format.TCX;
+import org.runnerup.workout.FileFormats;
 import org.runnerup.workout.Sport;
 
 import java.io.BufferedOutputStream;
@@ -48,9 +51,14 @@ public class FileSynchronizer extends DefaultSynchronizer {
 
     private long id = 0;
     private String mPath;
-    private String mFormat;
+    private FileFormats mFormat;
+    private PathSimplifier simplifier;
 
-    FileSynchronizer() {
+    FileSynchronizer() {}
+
+    FileSynchronizer(Context context, PathSimplifier simplifier) {
+        this();
+        this.simplifier = simplifier;
     }
 
     @Override
@@ -77,8 +85,6 @@ public class FileSynchronizer extends DefaultSynchronizer {
     static public String contentValuesToAuthConfig(ContentValues config) {
         FileSynchronizer f = new FileSynchronizer();
         f.mPath = config.getAsString(DB.ACCOUNT.URL);
-        f.mFormat = config.getAsString(DB.ACCOUNT.FORMAT);
-        
         return f.getAuthConfig();
     }
 
@@ -87,9 +93,9 @@ public class FileSynchronizer extends DefaultSynchronizer {
         String authConfig = config.getAsString(DB.ACCOUNT.AUTH_CONFIG);
         if (authConfig != null) {
             try {
+                mFormat = new FileFormats(config.getAsString(DB.ACCOUNT.FORMAT));
                 JSONObject tmp = new JSONObject(authConfig);
                 mPath = tmp.optString(DB.ACCOUNT.URL, null);
-                mFormat = tmp.optString(DB.ACCOUNT.FORMAT);
             } catch (JSONException e) {
                 Log.w(getName(), "init: Dropping config due to failure to parse json from " + authConfig + ", " + e);
             }
@@ -103,9 +109,8 @@ public class FileSynchronizer extends DefaultSynchronizer {
         if (isConfigured()) {
             try {
                 tmp.put(DB.ACCOUNT.URL, mPath);
-                tmp.put(DB.ACCOUNT.FORMAT, mFormat);
             } catch (JSONException e) {
-                Log.w(getName(), "getAuthConfig: Failure to create json for " + mPath + ", " + mFormat + ", " + e);
+                Log.w(getName(), "getAuthConfig: Failure to create json for " + mPath + ", " + e);
     }
         }
         return tmp.toString();
@@ -113,7 +118,7 @@ public class FileSynchronizer extends DefaultSynchronizer {
 
     @Override
     public boolean isConfigured() {
-        return !TextUtils.isEmpty(mPath) && !TextUtils.isEmpty(mFormat);
+        return !TextUtils.isEmpty(mPath);
     }
 
     @Override
@@ -168,17 +173,17 @@ public class FileSynchronizer extends DefaultSynchronizer {
             String fileBase = new File(mPath).getAbsolutePath() + File.separator +
                     String.format(Locale.getDefault(), "RunnerUp_%04d_%s.", mID, sport.TapiriikType());
             
-            if (mFormat.contains("tcx")) {
-                TCX tcx = new TCX(db);
-                File file = new File(fileBase + "tcx");
+            if (mFormat.contains(FileFormats.TCX)) {
+                TCX tcx = new TCX(db, simplifier);
+                File file = new File(fileBase + FileFormats.TCX.getValue());
                 OutputStream out = new BufferedOutputStream(new FileOutputStream(file));
                 tcx.export(mID, new OutputStreamWriter(out));
                 s.externalId = Uri.fromFile(file).toString();
                 s.externalIdStatus = ExternalIdStatus.NONE; //Not working yet
             }
-            if (mFormat.contains("gpx")) {
-                GPX gpx = new GPX(db, true, true);
-                File file = new File(fileBase + "gpx");
+            if (mFormat.contains(FileFormats.GPX)) {
+                GPX gpx = new GPX(db, true, true, simplifier);
+                File file = new File(fileBase + FileFormats.GPX.getValue());
                 OutputStream out = new BufferedOutputStream(new FileOutputStream(file));
                 gpx.export(mID, new OutputStreamWriter(out));
             }
@@ -193,6 +198,7 @@ public class FileSynchronizer extends DefaultSynchronizer {
     public boolean checkSupport(Feature f) {
         switch (f) {
             case UPLOAD:
+            case FILE_FORMAT:
                 return true;
             default:
                 return false;

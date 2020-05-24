@@ -33,6 +33,7 @@ import android.util.Pair;
 
 import org.runnerup.BuildConfig;
 import org.runnerup.db.DBHelper;
+import org.runnerup.db.PathSimplifier;
 import org.runnerup.export.format.FacebookCourse;
 import org.runnerup.export.format.GPX;
 import org.runnerup.export.format.GoogleStaticMap;
@@ -150,36 +151,36 @@ public class ActivityProvider extends ContentProvider {
                 Log.e(getClass().getName(), "activity: " + activityId + ", file: "
                         + out.first.getAbsolutePath());
                 SQLiteDatabase mDB = DBHelper.getReadableDatabase(getContext());
+
+                PathSimplifier simplifier = PathSimplifier.getPathSimplifierForExport(getContext());
+
                 try {
                     if (res == TCX) {
-                        TCX tcx = new TCX(mDB);
+                        TCX tcx = new TCX(mDB, simplifier);
                         tcx.export(activityId, new OutputStreamWriter(out.second));
                         Log.e(getClass().getName(), "export tcx");
                     } else if (res == GPX) {
                         final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this.getContext());
                         //The data must exist if log, use the log option as a possibility to "deactivate" too
-                        boolean enabled = prefs.getBoolean(this.getContext().getString(org.runnerup.R.string.pref_log_gpx_accuracy), false);
-                        GPX gpx = new GPX(mDB, true, enabled);
+                        boolean extraData = prefs.getBoolean(this.getContext().getString(org.runnerup.R.string.pref_log_gpx_accuracy), false);
+                        GPX gpx = new GPX(mDB, true, extraData, simplifier);
                         gpx.export(activityId, new OutputStreamWriter(out.second));
                         Log.e(getClass().getName(), "export gpx");
                     } else if (res == NIKE) {
-                        NikeXML xml = new NikeXML(mDB);
+                        NikeXML xml = new NikeXML(mDB, simplifier);
                         xml.export(activityId, new OutputStreamWriter(out.second));
                     } else if (res == MAPS) {
-                        GoogleStaticMap map = new GoogleStaticMap(mDB);
+                        GoogleStaticMap map = new GoogleStaticMap(mDB, simplifier);
                         String str = map.export(activityId, 2000);
                         out.second.write(str.getBytes());
                     } else if (res == FACEBOOK_COURSE) {
-                        FacebookCourse map = new FacebookCourse(getContext(), mDB);
+                        FacebookCourse map = new FacebookCourse(getContext(), mDB, simplifier);
                         final boolean includeMap = true;
                         String str = map.export(activityId, includeMap, null).toString();
                         out.second.write(str.getBytes());
-                    } else {
-                       //noinspection ConstantConditions
-                       if (res == RUNKEEPER) {
-                            RunKeeper map = new RunKeeper(mDB);
-                            map.export(activityId, new OutputStreamWriter(out.second));
-                        }
+                    } else if (res == RUNKEEPER) {
+                        RunKeeper map = new RunKeeper(mDB, simplifier);
+                        map.export(activityId, new OutputStreamWriter(out.second));
                     }
                     out.second.flush();
                     out.second.close();

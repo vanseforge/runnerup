@@ -20,8 +20,6 @@ package org.runnerup.export;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.support.v4.util.LongSparseArray;
-import android.support.v7.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.ContentValues;
 import android.content.Context;
@@ -38,6 +36,8 @@ import android.os.Environment;
 import android.preference.PreferenceManager;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
+import android.support.v4.util.LongSparseArray;
+import android.support.v7.app.AlertDialog;
 import android.text.InputType;
 import android.util.Log;
 import android.util.Pair;
@@ -56,6 +56,7 @@ import org.runnerup.BuildConfig;
 import org.runnerup.R;
 import org.runnerup.common.util.Constants.DB;
 import org.runnerup.db.DBHelper;
+import org.runnerup.db.PathSimplifier;
 import org.runnerup.export.Synchronizer.AuthMethod;
 import org.runnerup.export.Synchronizer.Status;
 import org.runnerup.feed.FeedList;
@@ -90,6 +91,7 @@ public class SyncManager {
     private Context mContext = null;
     private final Map<String, Synchronizer> synchronizers = new HashMap<>();
     private final LongSparseArray<Synchronizer> synchronizersById = new LongSparseArray<>();
+    PathSimplifier simplifier;
 
     private ProgressDialog mSpinner = null;
 
@@ -118,6 +120,7 @@ public class SyncManager {
         mDB = DBHelper.getWritableDatabase(context);
         mSpinner = spinner;
         mSpinner.setCancelable(false);
+        simplifier = PathSimplifier.getPathSimplifierForExport(context);
     }
     public SyncManager(Activity activity) {
         init(activity, activity, new ProgressDialog(activity));
@@ -178,45 +181,38 @@ public class SyncManager {
         if (synchronizers.containsKey(synchronizerName)) {
             return synchronizers.get(synchronizerName);
         }
+
         Synchronizer synchronizer = null;
         if (synchronizerName.contentEquals(RunKeeperSynchronizer.NAME)) {
-            synchronizer = new RunKeeperSynchronizer(this);
+            synchronizer = new RunKeeperSynchronizer(this,simplifier);
         } else if (synchronizerName.contentEquals(GarminSynchronizer.NAME)) {
-            synchronizer = new GarminSynchronizer();
-        } else if (synchronizerName.contentEquals(FunBeatSynchronizer.NAME)) {
-            synchronizer = new FunBeatSynchronizer(this);
+            synchronizer = new GarminSynchronizer(simplifier);
         } else if (synchronizerName.contentEquals(MapMyRunSynchronizer.NAME)) {
-            synchronizer = new MapMyRunSynchronizer(this);
-        } else if (synchronizerName.contentEquals(NikePlusSynchronizer.NAME)) {
-            synchronizer = new NikePlusSynchronizer(this);
+            synchronizer = new MapMyRunSynchronizer(this, simplifier);
         } else if (synchronizerName.contentEquals(JoggSESynchronizer.NAME)) {
-            synchronizer = new JoggSESynchronizer(this);
+            synchronizer = new JoggSESynchronizer(this, simplifier);
         } else if (synchronizerName.contentEquals(EndomondoSynchronizer.NAME)) {
-            synchronizer = new EndomondoSynchronizer();
+            synchronizer = new EndomondoSynchronizer(simplifier);
         } else if (synchronizerName.contentEquals(RunningAHEADSynchronizer.NAME)) {
-            synchronizer = new RunningAHEADSynchronizer(this);
+            synchronizer = new RunningAHEADSynchronizer(this, simplifier);
         } else if (synchronizerName.contentEquals(RunnerUpLiveSynchronizer.NAME)) {
             synchronizer = new RunnerUpLiveSynchronizer(mContext);
-        } else if (synchronizerName.contentEquals(DigifitSynchronizer.NAME)) {
-            synchronizer = new DigifitSynchronizer();
         } else if (synchronizerName.contentEquals(StravaSynchronizer.NAME)) {
-            synchronizer = new StravaSynchronizer(this);
+            synchronizer = new StravaSynchronizer(this, simplifier);
         } else if (synchronizerName.contentEquals(FacebookSynchronizer.NAME)) {
-            synchronizer = new FacebookSynchronizer(mContext, this);
-        } else if (synchronizerName.contentEquals(GooglePlusSynchronizer.NAME)) {
-            synchronizer = new GooglePlusSynchronizer(this);
+            synchronizer = new FacebookSynchronizer(mContext, this, simplifier);
         } else if (synchronizerName.contentEquals(RuntasticSynchronizer.NAME)) {
-            synchronizer = new RuntasticSynchronizer();
+            synchronizer = new RuntasticSynchronizer(simplifier);
         } else if (synchronizerName.contentEquals(GoogleFitSynchronizer.NAME)) {
             synchronizer = new GoogleFitSynchronizer(mContext, this);
-        } else if (synchronizerName.contentEquals(RunningFreeOnlineSynchronizer.NAME)) {
-            synchronizer = new RunningFreeOnlineSynchronizer();
         } else if (synchronizerName.contentEquals(FileSynchronizer.NAME)) {
-            synchronizer = new FileSynchronizer();
+            synchronizer = new FileSynchronizer(mContext, simplifier);
         } else if (synchronizerName.contentEquals(RunalyzeSynchronizer.NAME)) {
-            synchronizer = new RunalyzeSynchronizer();
+            synchronizer = new RunalyzeSynchronizer(simplifier);
         } else if (synchronizerName.contentEquals(DropboxSynchronizer.NAME)) {
-            synchronizer = new DropboxSynchronizer();
+            synchronizer = new DropboxSynchronizer(mContext, simplifier);
+        } else if (synchronizerName.contentEquals(WebDavSynchronizer.NAME)) {
+            synchronizer = new WebDavSynchronizer(mContext, simplifier);
         } else {
             Log.e(getClass().getName(), "synchronizer does not exist: " + synchronizerName);;
         }
@@ -232,6 +228,13 @@ public class SyncManager {
             synchronizersById.put(synchronizer.getId(), synchronizer);
         } else {
             Log.e(getClass().getName(), "Synchronizer not found for " + synchronizerName);
+            try {
+                long synchronizerId = Long.parseLong(config.getAsString(DB.PRIMARY_KEY));
+                DBHelper.deleteAccount(mDB, synchronizerId);
+            } catch (Exception ex) {
+                Log.e(getClass().getName(), "Failed to deleted deprecated synchronizer", ex);
+            }
+
         }
         return synchronizer;
     }
@@ -476,10 +479,6 @@ public class SyncManager {
         final TextView tv1 = (TextView) view.findViewById(R.id.fileuri);
         final TextView tvAuthNotice = (TextView) view.findViewById(R.id.textViewAuthNotice);
 
-        final CheckBox cbtcx = (CheckBox) view.findViewById(R.id.tcxformat);
-        final CheckBox cbgpx = (CheckBox) view.findViewById(R.id.gpxformat);
-        cbtcx.setChecked(true);
-
         String path;
         if (Build.VERSION.SDK_INT >= 19) {
             //noinspection InlinedApi
@@ -508,16 +507,8 @@ public class SyncManager {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         //Set default values
-                        String format = "";
-                        if (cbtcx.isChecked()) {
-                            format = "tcx,";
-                        }
-                        if (cbgpx.isChecked()) {
-                            format += "gpx,";
-                        }
 
                         ContentValues tmp = new ContentValues();
-                        tmp.put(DB.ACCOUNT.FORMAT, format);
                         tmp.put(DB.ACCOUNT.URL, tv1.getText().toString());
                         ContentValues config = new ContentValues();
                         config.put("_id", sync.getId());
@@ -1380,3 +1371,4 @@ public class SyncManager {
         return set;
     }
 }
+

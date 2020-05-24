@@ -161,6 +161,52 @@
             android:title="@string/log_extended_gps_title"
             android:summary="@string/log_extended_gps_summary" />
 
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:key="@string/pref_runneruplive_active"
+            android:persistent="true"
+            android:title="@string/Enable_RunnerUpLive"
+            android:summary="@string/Note_you_need_to_connect_to_the_account_too"/>
+
+        <PreferenceCategory
+            android:key="@string/path_simplification"
+            android:title="@string/path_simplification">
+
+            <Preference
+                android:summary="@string/path_simplification_info" />
+
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="@string/pref_path_simplification_on_save"
+                android:persistent="true"
+                android:title="@string/path_simplification_on_save"
+                android:disableDependentsState="true" />
+
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="@string/pref_path_simplification_on_export"
+                android:persistent="true"
+                android:title="@string/path_simplification_on_export"
+                android:dependency="@string/pref_path_simplification_on_save" />
+
+            <org.runnerup.widget.TextPreference
+                android:key="@string/pref_path_simplification_tolerance"
+                android:defaultValue="3"
+                android:persistent="true"
+                android:inputType="number"
+                android:title="@string/path_simplification_tolerance"
+                android:summary="the higher the tolerance, the smoother the path; however, this might reduce the length of the path (curves instead of sharp edges)"/>
+
+            <ListPreference
+                android:key="@string/pref_path_simplification_algorithm"
+                android:defaultValue="ramer_douglas_peucker"
+                android:persistent="true"
+                android:title="@string/path_simplification_algorithm"
+                android:entries="@array/path_simplification_algorithm_titles"
+                android:entryValues="@array/path_simplification_algorithm_values"
+                android:summary="@string/path_simplification_algorithm_info" />
+        </PreferenceCategory>
+
     </PreferenceScreen>
 
     <PreferenceScreen
@@ -337,13 +383,6 @@
                 android:title="@string/Smooth_pace_filters" />
         </PreferenceCategory>
     </PreferenceScreen>
-
-    <!--CheckBoxPreference
-        android:defaultValue="false"
-        android:key="@string/pref_runneruplive_active"
-        android:persistent="true"
-        android:title="@string/Enable_RunnerUpLive"
-        android:summary="@string/Note_you_need_to_connect_to_the_account_too" /-->
 
     <PreferenceScreen
         android:key="advanced_preferencescreen"
